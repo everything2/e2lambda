@@ -45,8 +45,9 @@ def lambda_handler(args)
     return http_response(500, "Could not get Github secret")
   end
 
-  unless(generate_github_signature(secret, event["body"]).eql? signature)
-    return http_response(403, "Signature does not match")
+  expected_signature = generate_github_signature(secret, event["body"]) 
+  unless(expected_signature.eql? signature)
+    return http_response(403, "Signature does not match expected")
   end
 
   body = nil
@@ -66,12 +67,14 @@ def lambda_handler(args)
 
   filename = nil
   filepart = nil
+  
+  html_url.gsub!("github.com", "codeload.github.com")
   if matches = /\/([^\/]+)$/.match(html_url)
     filepart = matches[1] + '.zip'
     filename = '/tmp/' + filepart
   end
 
-  zipurl = html_url + '/zipball/master/'
+  zipurl = html_url + '/legacy.zip/master'
 
   if filename.nil?
     return http_response(400, "Could not extract filename part from html_url: '#{html_url}'")
