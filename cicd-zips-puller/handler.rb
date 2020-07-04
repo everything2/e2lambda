@@ -1,8 +1,14 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'rubygems'
+require 'bundler/setup'
+
 
 require 'json'
 require 'aws-sdk-s3'
 require 'openssl'
+require 'archive-zip'
 require 'net/http'
 
 def http_response(code, message)
