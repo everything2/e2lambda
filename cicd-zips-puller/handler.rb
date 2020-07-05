@@ -7,6 +7,7 @@ require 'bundler/setup'
 require 'fileutils'
 require 'json'
 require 'aws-sdk-s3'
+require 'aws-sdk-lambda'
 require 'openssl'
 require 'net/http'
 require 'archive/zip'
@@ -25,6 +26,10 @@ end
 
 def lambda_handler(args)
   s3client = Aws::S3::Client.new(region: ENV['AWS_DEFAULT_REGION'])
+  lambdaclient = Aws::Lambda::Client.new(region: ENV['AWS_DEFAULT_REGION'])
+
+  bucket = 'githubzips.everything2.com'
+
   event = args[:event]
 
   if event['repo'].nil?
@@ -75,7 +80,12 @@ def lambda_handler(args)
   puts "Creating new file"
   Archive::Zip.archive(filename, "/tmp/#{prefix}/.")
 
-  s3client.put_object(bucket: "githubzips.everything2.com", key: filepart, body: File.open(filename).read)
+  s3client.put_object(bucket: bucket, key: filepart, body: File.open(filename).read)
+
+  if filepart.eql? "everything2.zip"
+    puts "Invoking processor handler for 'everything2.zip'"
+    lambdaclient.invoke(function_name: "everything2-zipfile-processor", payload: {"bucket": bucket, "zipfile": filepart}.to_json, invocation_type: "Event")
+  end
 
   puts "Cleaning up download"
   File.unlink(filename)
