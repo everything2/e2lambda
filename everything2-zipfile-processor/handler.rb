@@ -27,6 +27,7 @@ def lambda_handler(args)
 
   disk_zipfile = "/tmp/#{zipfile}"
   expandir = "/tmp/expand"
+  puts "Using bucket: #{bucket}"
 
   puts "Cleaning out old runs (#{disk_zipfile},#{expandir})"
 
@@ -38,6 +39,7 @@ def lambda_handler(args)
   puts "Fetching done... unzipping"
   Archive::Zip.extract(disk_zipfile, "#{expandir}/.")
 
+  puts "Uploading content"
   Find.find(expandir) do |item|
     next unless item.start_with?("#{expandir}/vagrant/cookbooks")
     next unless FileTest.file?(item)
@@ -47,6 +49,23 @@ def lambda_handler(args)
     puts "Uploading to #{upload_key} "
     s3client.put_object(body: File.open(item).read, bucket: "cookbooks.everything2.com", key: upload_key)
   end
+
+  puts "Trimming leftover objects"
+  continuation_token = nil
+
+  loop do
+    response = s3client.list_objects_v2(bucket: "cookbooks.everything2.com")
+    response.contents.each do |item|
+      unless File.exist?("#{expandir}/vagrant/cookbooks/#{item['key']}")
+        puts "Removing #{item['key']}"
+        s3client.delete_object(bucket: "cookbooks.everything2.com", key: item['key'])
+      end
+    end
+
+    continuation_token = response.continuation_token
+    break unless response.is_truncated
+  end
+  puts "Done"
 
   return http_response(200, "OK")
 end
