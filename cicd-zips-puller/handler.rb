@@ -4,12 +4,12 @@
 require 'rubygems'
 require 'bundler/setup'
 
-
+require 'fileutils'
 require 'json'
 require 'aws-sdk-s3'
 require 'openssl'
-require 'archive-zip'
 require 'net/http'
+require 'archive/zip'
 
 def http_response(code, message)
   {"statusCode": code, "headers": {"Content-Type": "application/json"}, "body": {"message": message}.to_json}
@@ -26,50 +26,12 @@ end
 def lambda_handler(args)
   s3client = Aws::S3::Client.new(region: ENV['AWS_DEFAULT_REGION'])
   event = args[:event]
-  context = args[:context]
 
-  signature = nil
-  unless(event["headers"].nil?)
-    signature = event["headers"]["X-Hub-Signature"]
+  if event['repo'].nil?
+    return http_response(400, "No repo to pull")
   end
 
-  if(signature.nil?)
-    return http_response(400, "No signature found in headers")
-  end
-
-  if(event.nil? or event["body"].nil?)
-    return http_response(400, "Empty POST body")
-  end
-
-  begin
-    secret = get_github_secret(s3client)
-  rescue Aws::S3::Errors::AccessDenied => e
-    return http_response(500, "No access to Github secret")
-  end
-  
-  if(secret.nil?)
-    return http_response(500, "Could not get Github secret")
-  end
-
-  expected_signature = generate_github_signature(secret, event["body"]) 
-  unless(expected_signature.eql? signature)
-    return http_response(403, "Signature does not match expected")
-  end
-
-  body = nil
-  begin
-    body = JSON.parse(event["body"])
-  rescue JSON::ParserError => e
-    return http_response(400, "JSON parsing failed")
-  end
-
-  html_url = nil
-
-  if(body["repository"].nil? or body["repository"]["html_url"].nil?)
-    return http_response(400, "No 'html_url' in body")
-  else
-    html_url = body["repository"]["html_url"]
-  end
+  html_url = event['repo']
 
   filename = nil
   filepart = nil
@@ -86,10 +48,40 @@ def lambda_handler(args)
     return http_response(400, "Could not extract filename part from html_url: '#{html_url}'")
   end
 
-  File.write(filename, Net::HTTP.get(URI.parse(zipurl)))  
+  downloaded_filename = filename+".downloaded"
+
+  File.write(downloaded_filename, Net::HTTP.get(URI.parse(zipurl)))  
+
+  downloaded_file = Archive::Zip.new(downloaded_filename)
+
+  puts "Downloaded file: #{downloaded_filename}"
+  prefix = nil
+
+
+  downloaded_file.each do |item|
+    next if item.directory?
+    puts "Item: #{item.zip_path}"
+    if matches = item.zip_path.match(/^([^\/]+)/)
+      prefix = matches[1]
+    end
+    
+    puts "Prefix detected as: #{prefix}"
+    break
+  end
+
+  puts "Extracting file"
+  Archive::Zip.extract(downloaded_filename, "/tmp/.")
+
+  puts "Creating new file"
+  Archive::Zip.archive(filename, "/tmp/#{prefix}/.")
 
   s3client.put_object(bucket: "githubzips.everything2.com", key: filepart, body: File.open(filename).read)
 
+  puts "Cleaning up download"
   File.unlink(filename)
+
+  puts "Cleaning expanded zip directory"
+  FileUtils.rm_rf("/tmp/#{prefix}")
+
   http_response(200, "OK - Cloned #{zipurl}")
 end
