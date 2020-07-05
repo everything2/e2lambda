@@ -82,6 +82,11 @@ def lambda_handler(args)
     html_url = body["repository"]["html_url"]
   end
 
+  puts "Evaluating ref: #{body['ref']}"
+  unless(body['ref'].eql? "refs/heads/master")
+    return http_response(200, "Non-master commit, skipping")
+  end
+
   puts "Invoking zips puller function with repo: #{html_url}"
 
   lambdaclient.invoke(function_name: "cicd-zips-puller", payload: {"repo": html_url}.to_json, invocation_type: "Event")
