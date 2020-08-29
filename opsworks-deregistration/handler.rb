@@ -34,7 +34,7 @@ def lambda_handler(args)
       if tag.key.eql? 'opsworks_stack_id'
         stack_id = tag.value
         puts "Checking OpsWorks Stack: #{stack_id}"
-        opsworks_client = AWS::OpsWorks::Client.new(region: ENV['AWS_DEFAULT_REGION'])
+        opsworks_client = Aws::OpsWorks::Client.new(region: ENV['AWS_DEFAULT_REGION'])
         opsworks_client.describe_instances(stack_ids: [stack_id]).instances.each do |instance|
           if instance.ec2_instance_id.eql? instance_id
             puts "Instance #{instance_id} found in stack: #{stack_id}, deregistering"
